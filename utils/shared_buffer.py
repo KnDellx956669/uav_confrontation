@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from utils.util import get_shape_from_obs_space, get_shape_from_act_space
+from light_mappo.utils.util import get_shape_from_obs_space, get_shape_from_act_space
 
 
 def _flatten(T, N, x):
@@ -52,7 +52,7 @@ class SharedReplayBuffer(object):
         self.rnn_states_critic = np.zeros_like(self.rnn_states)
 
         self.value_preds = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)  # v^hat
         self.returns = np.zeros_like(self.value_preds)
 
         if act_space.__class__.__name__ == 'Discrete':
@@ -124,7 +124,7 @@ class SharedReplayBuffer(object):
         :param value_preds: (np.ndarray) value function prediction at each step.
         :param rewards: (np.ndarray) reward collected at each step.
         :param masks: (np.ndarray) denotes whether the environment has terminated or not.
-        :param bad_masks: (np.ndarray) denotes indicate whether whether true terminal state or due to episode limit
+        :param bad_masks: (np.ndarray) denotes indicate whether true terminal state or due to episode limit
         :param active_masks: (np.ndarray) denotes whether an agent is active or dead in the env.
         :param available_actions: (np.ndarray) actions available to each agent. If None, all actions are available.
         """
@@ -171,17 +171,22 @@ class SharedReplayBuffer(object):
         :param next_value: (np.ndarray) value predictions for the step after the last episode step.
         :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
         """
+        # default to use proper time limits
         if self._use_proper_time_limits:
             if self._use_gae:
                 self.value_preds[-1] = next_value
                 gae = 0
+                # the shape of the self.rewards is [total_step, n_rollout_threads, num_agents, 1]
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
                         # step + 1
+                        # first compute the temporal difference
                         delta = self.rewards[step] + self.gamma * value_normalizer.denormalize(
                             self.value_preds[step + 1]) * self.masks[step + 1] \
                                 - value_normalizer.denormalize(self.value_preds[step])
-                        gae = delta + self.gamma * self.gae_lambda * gae * self.masks[step + 1]
+                        # value_preds stands for value predictions
+                        # compute the generalized advantage estimation
+                        gae = delta + self.gamma * self.gae_lambda * gae * self.masks[step + 1]  # The shape of gae is (5, 3, 1)
                         gae = gae * self.bad_masks[step + 1]
                         self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
                     else:
@@ -390,9 +395,9 @@ class SharedReplayBuffer(object):
         :param data_chunk_length: (int) length of sequence chunks with which to train RNN.
         """
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
-        batch_size = n_rollout_threads * episode_length * num_agents
-        data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L]
-        mini_batch_size = data_chunks // num_mini_batch
+        batch_size = n_rollout_threads * episode_length * num_agents  # batch_size = 6000
+        data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L], there is "data_chunks" data_chunk
+        mini_batch_size = data_chunks // num_mini_batch  # mini_batch_size = 600 here
 
         rand = torch.randperm(data_chunks).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]

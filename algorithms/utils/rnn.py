@@ -21,8 +21,9 @@ class RNNLayer(nn.Module):
                     nn.init.xavier_uniform_(param)
         self.norm = nn.LayerNorm(outputs_dim)
 
-    def forward(self, x, hxs, masks):
+    def forward(self, x, hxs, masks):  # hxs is for hidden states (with regard to x , so hx), masks implies the termination of a trajectory
         if x.size(0) == hxs.size(0):
+            # the present project uses this branch, and the _recurrent_N is 1
             x, hxs = self.rnn(x.unsqueeze(0),
                               (hxs * masks.repeat(1, self._recurrent_N).unsqueeze(-1)).transpose(0, 1).contiguous())
             x = x.squeeze(0)
@@ -77,4 +78,4 @@ class RNNLayer(nn.Module):
             hxs = hxs.transpose(0, 1)
 
         x = self.norm(x)
-        return x, hxs
+        return x, hxs  # x is actor_features, and hxs is rnn_states

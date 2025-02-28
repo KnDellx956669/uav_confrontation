@@ -1,7 +1,7 @@
 import gym
 from gym import spaces
 import numpy as np
-from envs.env_core import EnvCore
+from light_mappo.envs.env_core import EnvCore
 
 
 class ContinuousActionEnv(object):

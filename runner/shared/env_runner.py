@@ -8,9 +8,10 @@
 import time
 import numpy as np
 import torch
-from runner.shared.base_runner import Runner
+import imageio
 
-# import imageio
+
+from light_mappo.runner.shared.base_runner import Runner
 
 
 def _t2n(x):
@@ -22,6 +23,22 @@ class EnvRunner(Runner):
 
     def __init__(self, config):
         super(EnvRunner, self).__init__(config)
+        self.noise_vector = None
+        self.sigma = 1
+        self.reset_noise_interval = -1
+        self.noise_dim = 5
+        self.reset_noise()
+
+    def reset_noise(self):
+        "init noise"
+        if self.noise_vector is None:
+            self.noise_vector = []
+            for i in range(self.num_agents):
+                self.noise_vector.append(np.random.randn(self.noise_dim) * self.sigma)
+            self.noise_vector = np.array(self.noise_vector)
+        else:
+            # shuffle noise
+            np.random.shuffle(self.noise_vector)
 
     def run(self):
         self.warmup()
@@ -29,92 +46,240 @@ class EnvRunner(Runner):
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
-        for episode in range(episodes):
-            if self.use_linear_lr_decay:
-                self.trainer.policy.lr_decay(episode, episodes)
+        # set whether to use pre-set
+        if self.use_preset:
+            for episode in range(episodes):
+                if self.use_linear_lr_decay:
+                    self.trainer.policy.lr_decay(episode, episodes)
+                if episode <= 100:
+                    for step in range(self.episode_length):
+                        # Sample actions
+                        (
+                            values,
+                            actions,
+                            action_log_probs,
+                            rnn_states,
+                            rnn_states_critic,
+                            actions_env,
+                        ) = self.collect(step)
 
-            for step in range(self.episode_length):
-                # Sample actions
-                (
-                    values,
-                    actions,
-                    action_log_probs,
-                    rnn_states,
-                    rnn_states_critic,
-                    actions_env,
-                ) = self.collect(step)
+                        # Obser reward and next obs
+                        obs, rewards, dones, infos = self.envs.step_preset(actions_env)
 
-                # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
+                        # render the first env of all the n_rollout_threads envs in every episode
+                        self.envs.envs[0].render()
+                        time.sleep(0.001)
 
-                data = (
-                    obs,
-                    rewards,
-                    dones,
-                    infos,
-                    values,
-                    actions,
-                    action_log_probs,
-                    rnn_states,
-                    rnn_states_critic,
-                )
+                        data = (
+                            obs,
+                            rewards,
+                            dones,
+                            infos,
+                            values,
+                            actions,
+                            action_log_probs,
+                            rnn_states,
+                            rnn_states_critic,
+                        )
 
-                # insert data into buffer
-                self.insert(data)
+                        # insert data into buffer
+                        self.insert(data)
 
-            # compute return and update network
-            self.compute()
-            train_infos = self.train()
+                    # compute return and update network
+                    self.compute()
+                    train_infos = self.train()
 
-            # post process
-            total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
+                    # post process
+                    total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
 
-            # save model
-            if episode % self.save_interval == 0 or episode == episodes - 1:
-                self.save()
+                    # save model
+                    if episode % self.save_interval == 0 or episode == episodes - 1:
+                        self.save()
 
-            # log information
-            if episode % self.log_interval == 0:
-                end = time.time()
-                print(
-                    "\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
-                        self.all_args.scenario_name,
-                        self.algorithm_name,
-                        self.experiment_name,
-                        episode,
-                        episodes,
-                        total_num_steps,
-                        self.num_env_steps,
-                        int(total_num_steps / (end - start)),
+                    # log information
+                    if episode % self.log_interval == 0:
+                        end = time.time()
+                        print(
+                            "\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
+                                self.all_args.scenario_name,
+                                self.algorithm_name,
+                                self.experiment_name,
+                                episode,
+                                episodes,
+                                total_num_steps,
+                                self.num_env_steps,
+                                int(total_num_steps / (end - start)),
+                            )
+                        )
+                        train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
+                        print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                        self.log_train(train_infos, total_num_steps)
+                        # self.log_env(env_infos, total_num_steps)
+
+                    # eval
+                    if episode % self.eval_interval == 0 and self.use_eval:
+                        self.eval(total_num_steps)
+
+                else:
+                    for step in range(self.episode_length):
+                        # Sample actions
+                        (
+                            values,
+                            actions,
+                            action_log_probs,
+                            rnn_states,
+                            rnn_states_critic,
+                            actions_env,
+                        ) = self.collect(step)
+
+                        # Obser reward and next obs
+                        obs, rewards, dones, infos = self.envs.step(actions_env)
+
+                        # render the first env of all the n_rollout_threads envs in every episode
+                        self.envs.envs[0].render()
+                        time.sleep(0.001)
+
+                        data = (
+                            obs,
+                            rewards,
+                            dones,
+                            infos,
+                            values,
+                            actions,
+                            action_log_probs,
+                            rnn_states,
+                            rnn_states_critic,
+                        )
+
+                        # insert data into buffer
+                        self.insert(data)
+
+                    # compute return and update network
+                    self.compute()
+                    train_infos = self.train()
+
+                    # post process
+                    total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
+
+                    # save model
+                    if episode % self.save_interval == 0 or episode == episodes - 1:
+                        self.save()
+
+                    # log information
+                    if episode % self.log_interval == 0:
+                        end = time.time()
+                        print(
+                            "\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
+                                self.all_args.scenario_name,
+                                self.algorithm_name,
+                                self.experiment_name,
+                                episode,
+                                episodes,
+                                total_num_steps,
+                                self.num_env_steps,
+                                int(total_num_steps / (end - start)),
+                            )
+                        )
+                        train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
+                        print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                        self.log_train(train_infos, total_num_steps)
+                        # self.log_env(env_infos, total_num_steps)
+                    # eval
+                    if episode % self.eval_interval == 0 and self.use_eval:
+                        self.eval(total_num_steps)
+
+        else:
+            for episode in range(episodes):
+                if self.use_linear_lr_decay:
+                    self.trainer.policy.lr_decay(episode, episodes)
+
+                if self.use_NVMAPPO and self.reset_noise_interval != -1:
+                    if episode % self.reset_noise_interval == 0:
+                        print('shuffle noise vector...')
+                        self.reset_noise()
+
+                for step in range(self.episode_length):
+                    # Sample actions
+                    (
+                        values,
+                        actions,
+                        action_log_probs,
+                        rnn_states,
+                        rnn_states_critic,
+                        actions_env,
+                    ) = self.collect(step)
+
+                    # Obser reward and next obs
+                    obs, rewards, dones, infos = self.envs.step(actions_env)  # shape of rewards is [5, 3, 1]
+
+                    # so far, rewards here can be positive !!!!!!!!!!
+
+                    # render the first env of all the n_rollout_threads envs in every episode
+                    # self.envs.envs[0].render()
+                    # time.sleep(0.001)
+
+                    data = (
+                        obs,
+                        rewards,
+                        dones,
+                        infos,
+                        values,
+                        actions,
+                        action_log_probs,
+                        rnn_states,
+                        rnn_states_critic,
                     )
-                )
 
-                # if self.env_name == "MPE":
-                #     env_infos = {}
-                #     for agent_id in range(self.num_agents):
-                #         idv_rews = []
-                #         for info in infos:
-                #             if 'individual_reward' in info[agent_id].keys():
-                #                 idv_rews.append(info[agent_id]['individual_reward'])
-                #         agent_k = 'agent%i/individual_rewards' % agent_id
-                #         env_infos[agent_k] = idv_rews
+                    # insert data into buffer
+                    self.insert(data)
 
-                train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
-                print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
-                self.log_train(train_infos, total_num_steps)
-                # self.log_env(env_infos, total_num_steps)
+                # compute return and update network
+                self.compute()
+                train_infos = self.train()
 
-            # eval
-            if episode % self.eval_interval == 0 and self.use_eval:
-                self.eval(total_num_steps)
+                # post process
+                total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
+
+                # save model
+                if episode % self.save_interval == 0 or episode == episodes - 1:
+                    self.save()
+
+                # log information
+                if episode % self.log_interval == 0:
+                    end = time.time()
+                    print(
+                        "\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
+                            self.all_args.scenario_name,
+                            self.algorithm_name,
+                            self.experiment_name,
+                            episode,
+                            episodes,
+                            total_num_steps,
+                            self.num_env_steps,
+                            int(total_num_steps / (end - start)),
+                        )
+                    )
+                    # so far, the reward can be positive !!!!!!!!!!
+                    # the output clearly shows the positive rewards
+                    train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
+                    episode_rewards = np.sum(self.buffer.rewards, axis=(0, 2))
+                    print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                    for i in range(5):
+                        print("the {}th episode rewards is {}".format(i+1, episode_rewards[i][0]))
+                    self.log_train(train_infos, total_num_steps)
+                    # self.log_env(env_infos, total_num_steps)
+
+                # eval
+                if episode % self.eval_interval == 0 and self.use_eval:
+                    self.eval(total_num_steps)
 
     def warmup(self):
         # reset env
         obs = self.envs.reset()  # shape = [env_num, agent_num, obs_dim]
 
         # replay buffer
-        if self.use_centralized_V:
-            share_obs = obs.reshape(self.n_rollout_threads, -1)  # shape = [env_num, agent_num * obs_dim]
+        if self.use_centralized_V:  # use this, the final shape is (5, 3, 72)
+            share_obs = self.envs.get_share_obs()
             share_obs = np.expand_dims(share_obs, 1).repeat(
                 self.num_agents, axis=1
             )  # shape = shape = [env_num, agent_num， agent_num * obs_dim]
@@ -164,9 +329,9 @@ class EnvRunner(Runner):
             # actions  --> actions_env : shape:[10, 1] --> [5, 2, 5]
             actions_env = np.squeeze(np.eye(self.envs.action_space[0].n)[actions], 2)
         else:
-            # TODO 这里改造成自己环境需要的形式即可
-            # TODO Here, you can change the shape of actions_env to fit your environment
+            # TODO: change the shape of actions_env to fit the environment
             actions_env = actions
+            # actions_env = torch.tanh(torch.tensor(actions_env)).numpy()
             # raise NotImplementedError
 
         return (
@@ -191,6 +356,8 @@ class EnvRunner(Runner):
             rnn_states_critic,
         ) = data
 
+        dones_env = np.all(dones, axis=1)  # distinguish
+
         rnn_states[dones == True] = np.zeros(
             ((dones == True).sum(), self.recurrent_N, self.hidden_size),
             dtype=np.float32,
@@ -200,14 +367,27 @@ class EnvRunner(Runner):
             dtype=np.float32,
         )
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-        masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
+        masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
+
+        active_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+        active_masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
+        active_masks[dones_env == True] = np.ones(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
+
+        bad_masks = np.array(
+            [[[0.0] if info[agent_id]['bad_transition'] else [1.0] for agent_id in range(self.num_agents)] for info in
+             infos])
 
         if self.use_centralized_V:
-            share_obs = obs.reshape(self.n_rollout_threads, -1)
+            share_obs = self.envs.get_share_obs()
             share_obs = np.expand_dims(share_obs, 1).repeat(self.num_agents, axis=1)
+            # share_obs = obs.reshape(self.n_rollout_threads, -1)
+            # share_obs = np.expand_dims(share_obs, 1).repeat(self.num_agents, axis=1)
         else:
             share_obs = obs
 
+        # if share_obs only for red_agents, then share_obs.shape=(5, 3, 72)
+        # but we need a global observation which is (5, 3, 144) the extra 72 in dim=2 means the state of the blue_agents
+        # which is not included in the share_obs before
         self.buffer.insert(
             share_obs,
             obs,
@@ -218,6 +398,8 @@ class EnvRunner(Runner):
             values,
             rewards,
             masks,
+            active_masks=active_masks,
+            bad_masks=bad_masks
         )
 
     @torch.no_grad()
@@ -324,7 +506,7 @@ class EnvRunner(Runner):
                 elif envs.action_space[0].__class__.__name__ == "Discrete":
                     actions_env = np.squeeze(np.eye(envs.action_space[0].n)[actions], 2)
                 else:
-                    raise NotImplementedError
+                    actions_env = actions
 
                 # Obser reward and next obs
                 obs, rewards, dones, infos = envs.step(actions_env)
@@ -340,14 +522,15 @@ class EnvRunner(Runner):
                 if self.all_args.save_gifs:
                     image = envs.render("rgb_array")[0][0]
                     all_frames.append(image)
-                    calc_end = time.time()
-                    elapsed = calc_end - calc_start
-                    if elapsed < self.all_args.ifi:
-                        time.sleep(self.all_args.ifi - elapsed)
+                    # calc_end = time.time()
+                    # elapsed = calc_end - calc_start
+                    # if elapsed < self.all_args.ifi:
+                    #     time.sleep(self.all_args.ifi - elapsed)
                 else:
                     envs.render("human")
 
             print("average episode rewards is: " + str(np.mean(np.sum(np.array(episode_rewards), axis=0))))
 
-        # if self.all_args.save_gifs:
-        #     imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)
+        if self.all_args.save_gifs:
+            # imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)
+            pass

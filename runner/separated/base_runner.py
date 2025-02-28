@@ -5,8 +5,8 @@ from itertools import chain
 import torch
 from tensorboardX import SummaryWriter
 
-from utils.separated_buffer import SeparatedReplayBuffer
-from utils.util import update_linear_schedule
+from light_mappo.utils.separated_buffer import SeparatedReplayBuffer
+from light_mappo.utils.util import update_linear_schedule
 
 
 def _t2n(x):
@@ -65,8 +65,8 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        from algorithms.algorithm.r_mappo import RMAPPO as TrainAlgo
-        from algorithms.algorithm.rMAPPOPolicy import RMAPPOPolicy as Policy
+        from light_mappo.algorithms.algorithm.r_mappo import RMAPPO as TrainAlgo
+        from light_mappo.algorithms.algorithm.rMAPPOPolicy import RMAPPOPolicy as Policy
 
         self.policy = []
         for agent_id in range(self.num_agents):

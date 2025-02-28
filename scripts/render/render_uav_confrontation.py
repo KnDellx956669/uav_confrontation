@@ -1,42 +1,37 @@
-#!/usr/bin/env python
+import setproctitle
 import sys
 import os
-import wandb
-import socket
-import setproctitle
 import numpy as np
 from pathlib import Path
-
 import torch
 
-from mappo.config import get_config
+from light_mappo.config import get_config
+from light_mappo.envs.UCE.UCE_env import UCEEnv
+from light_mappo.envs.env_wrappers import DummyVecEnv
 
-from mappo.envs.mpe.MPE_env import MPEEnv
-from mappo.envs.env_wrappers import SubprocVecEnv, DummyVecEnv
 
 def make_render_env(all_args):
     def get_env_fn(rank):
         def init_env():
-            if all_args.env_name == "MPE":
-                env = MPEEnv(all_args)
-            else:
-                print("Can not support the " +
-                      all_args.env_name + "environment.")
-                raise NotImplementedError
+            env = UCEEnv(all_args)
             env.seed(all_args.seed + rank * 1000)
             return env
         return init_env
-    if all_args.n_rollout_threads == 1:
-        return DummyVecEnv([get_env_fn(0)])
-    else:
-        return SubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
+
+    return DummyVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
+
 
 def parse_args(args, parser):
-    parser.add_argument('--scenario_name', type=str,
-                        default='simple_spread', help="Which scenario to run on")
-    parser.add_argument("--num_landmarks", type=int, default=3)
-    parser.add_argument('--num_agents', type=int,
-                        default=2, help="number of players")
+    parser.add_argument("--scenario_name", type=str, default="uav_swarm_confrontation", help="Which scenario to run on")
+    # parser.add_argument("--num_landmarks", type=int, default=3)
+    parser.add_argument("--num_agents", type=int, default=6, help="number of players")
+    parser.add_argument("--num_policy_agents", type=int, default=3, help="number of policy players")
+    parser.add_argument("--num_scripted_agents", type=int, default=3, help="number of policy players")
+    parser.add_argument("--num_red_agents", type=int, default=3, help="number of red players")
+    parser.add_argument("--num_blue_agents", type=int, default=3, help="number of blue players")
+    parser.add_argument("--task_num", type=int, default=1, help="the number of tasks")
+    parser.add_argument("--train_stage", type=str, default="curriculum", help="train stage (curriculum or self-play)")
+    parser.add_argument("--use_preset", default=False, help="use preset physical parameters")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -47,6 +42,11 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
 
+    # Set the model dir
+    all_args.model_dir = "D:/light_mappo/light_mappo/results/MyEnv/uav_swarm_confrontation/rmappo/check/run84/models"
+    all_args.n_rollout_threads = 1
+    all_args.save_gifs = True
+
     if all_args.algorithm_name == "rmappo" or all_args.algorithm_name == "rmappg":
         assert (
             all_args.use_recurrent_policy or all_args.use_naive_recurrent_policy), ("check recurrent policy!")
@@ -55,9 +55,6 @@ def main(args):
             "check recurrent policy!")
     else:
         raise NotImplementedError
-
-    assert (all_args.share_policy == True and all_args.scenario_name == 'simple_speaker_listener') == False, (
-        "The simple_speaker_listener scenario can not use shared policy. Please check the config.py.")
 
     assert all_args.use_render, ("u need to set use_render be True")
     assert not (all_args.model_dir == None or all_args.model_dir == ""), ("set model_dir first")
@@ -105,27 +102,32 @@ def main(args):
     envs = make_render_env(all_args)
     eval_envs = None
     num_agents = all_args.num_agents
+    num_policy_agents = all_args.num_policy_agents
 
     config = {
         "all_args": all_args,
         "envs": envs,
         "eval_envs": eval_envs,
         "num_agents": num_agents,
+        "num_policy_agents": num_policy_agents,
         "device": device,
-        "run_dir": run_dir
+        "run_dir": run_dir,
+        "use_preset": all_args.use_preset,
+        "use_NVMAPPO": True
     }
 
     # run experiments
     if all_args.share_policy:
-        from onpolicy.runner.shared.mpe_runner import MPERunner as Runner
+        from light_mappo.runner.shared.env_runner import EnvRunner as Runner
     else:
-        from onpolicy.runner.separated.mpe_runner import MPERunner as Runner
+        from light_mappo.runner.separated.env_runner import EnvRunner as Runner
 
     runner = Runner(config)
     runner.render()
     
     # post process
     envs.close()
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])

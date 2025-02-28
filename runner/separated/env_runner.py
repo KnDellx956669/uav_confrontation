@@ -4,8 +4,8 @@ import numpy as np
 from itertools import chain
 import torch
 
-from utils.util import update_linear_schedule
-from runner.separated.base_runner import Runner
+from light_mappo.utils.util import update_linear_schedule
+from light_mappo.runner.separated.base_runner import Runner
 
 
 def _t2n(x):

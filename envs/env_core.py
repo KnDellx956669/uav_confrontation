@@ -3,18 +3,19 @@ import numpy as np
 
 class EnvCore(object):
     """
-    # 环境中的智能体
+    call all uavs to be agents
     """
 
     def __init__(self):
-        self.agent_num = 2  # 设置智能体(小飞机)的个数，这里设置为两个 # set the number of agents(aircrafts), here set to two
-        self.obs_dim = 14  # 设置智能体的观测维度 # set the observation dimension of agents
-        self.action_dim = 5  # 设置智能体的动作维度，这里假定为一个五个维度的 # set the action dimension of agents, here set to a five-dimensional
+        self.num_agents = 6  # set the number of uavs to be 6
+        self.num_red_agents = 3
+        self.num_blue_agents = 3
+        self.obs_dim = 14  # set the observation dimension of agents
+        self.action_dim = 2  # set the action dimension of agents, here set to a two-dimensional
 
     def reset(self):
         """
-        # self.agent_num设定为2个智能体时，返回值为一个list，每个list里面为一个shape = (self.obs_dim, )的观测数据
-        # When self.agent_num is set to 2 agents, the return value is a list, each list contains a shape = (self.obs_dim, ) observation data
+          # When self.agent_num is set to 2 agents, the return value is a list, each list contains a shape = (self.obs_dim, ) observation data
         """
         sub_agent_obs = []
         for i in range(self.agent_num):

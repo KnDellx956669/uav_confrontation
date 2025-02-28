@@ -2,7 +2,7 @@
 # @Time    : 2021/6/30 10:07 下午
 # @Author  : hezhiqiang
 # @Email   : tinyzqh@163.com
-# @File    : train.py
+# @File    : train_task_1.py
 """
 
 # !/usr/bin/env python
@@ -20,8 +20,9 @@ parent_dir = os.path.abspath(os.path.join(os.getcwd(), "."))
 # Append the parent directory to sys.path, otherwise the following import will fail
 sys.path.append(parent_dir)
 
-from config import get_config
-from envs.env_wrappers import DummyVecEnv
+from light_mappo.config import get_config
+from light_mappo.envs.env_wrappers import DummyVecEnv
+from light_mappo.envs.UCE.UCE_env import UCEEnv
 
 """Train script for MPEs."""
 
@@ -31,10 +32,10 @@ def make_train_env(all_args):
         def init_env():
             # TODO 注意注意，这里选择连续还是离散可以选择注释上面两行，或者下面两行。
             # TODO Important, here you can choose continuous or discrete action space by uncommenting the above two lines or the below two lines.
-
-            from envs.env_continuous import ContinuousActionEnv
-
-            env = ContinuousActionEnv()
+            # from light_mappo.envs.env_continuous import ContinuousActionEnv
+            #
+            # env = ContinuousActionEnv()
+            env = UCEEnv(all_args)
 
             # from envs.env_discrete import DiscreteActionEnv
 
@@ -51,13 +52,12 @@ def make_train_env(all_args):
 def make_eval_env(all_args):
     def get_env_fn(rank):
         def init_env():
-            # TODO 注意注意，这里选择连续还是离散可以选择注释上面两行，或者下面两行。
-            # TODO Important, here you can choose continuous or discrete action space by uncommenting the above two lines or the below two lines.
-            from envs.env_continuous import ContinuousActionEnv
+            from light_mappo.envs.env_continuous import ContinuousActionEnv
 
-            env = ContinuousActionEnv()
+            # env = ContinuousActionEnv()
             # from envs.env_discrete import DiscreteActionEnv
             # env = DiscreteActionEnv()
+            env = UCEEnv(all_args)
             env.seed(all_args.seed + rank * 1000)
             return env
 
@@ -67,9 +67,16 @@ def make_eval_env(all_args):
 
 
 def parse_args(args, parser):
-    parser.add_argument("--scenario_name", type=str, default="MyEnv", help="Which scenario to run on")
-    parser.add_argument("--num_landmarks", type=int, default=3)
-    parser.add_argument("--num_agents", type=int, default=2, help="number of players")
+    parser.add_argument("--scenario_name", type=str, default="uav_swarm_confrontation", help="Which scenario to run on")
+    # parser.add_argument("--num_landmarks", type=int, default=3)
+    parser.add_argument("--num_agents", type=int, default=6, help="number of players")
+    parser.add_argument("--num_policy_agents", type=int, default=3, help="number of policy players")
+    parser.add_argument("--num_scripted_agents", type=int, default=3, help="number of policy players")
+    parser.add_argument("--num_red_agents", type=int, default=3, help="number of red players")
+    parser.add_argument("--num_blue_agents", type=int, default=3, help="number of blue players")
+    parser.add_argument("--task_num", type=int, default=2, help="the number of tasks")
+    parser.add_argument("--train_stage", type=str, default="curriculum", help="train stage (curriculum or self-play)")
+    parser.add_argument("--use_preset", default=False, help="use preset physical parameters")
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -88,10 +95,6 @@ def main(args):
         ), "check recurrent policy!"
     else:
         raise NotImplementedError
-
-    assert (
-        all_args.share_policy == True and all_args.scenario_name == "simple_speaker_listener"
-    ) == False, "The simple_speaker_listener scenario can not use shared policy. Please check the config.py."
 
     # cuda
     if all_args.cuda and torch.cuda.is_available():
@@ -118,7 +121,7 @@ def main(args):
         os.makedirs(str(run_dir))
 
     if not run_dir.exists():
-        curr_run = "run1"
+        curr_run = "run_20000_episodes"
     else:
         exst_run_nums = [
             int(str(folder.name).split("run")[1])
@@ -126,7 +129,7 @@ def main(args):
             if str(folder.name).startswith("run")
         ]
         if len(exst_run_nums) == 0:
-            curr_run = "run1"
+            curr_run = "run_20000_episodes"
         else:
             curr_run = "run%i" % (max(exst_run_nums) + 1)
     run_dir = run_dir / curr_run
@@ -152,21 +155,24 @@ def main(args):
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
     num_agents = all_args.num_agents
+    num_policy_agents = all_args.num_policy_agents
 
     config = {
         "all_args": all_args,
         "envs": envs,
         "eval_envs": eval_envs,
         "num_agents": num_agents,
+        "num_policy_agents": num_policy_agents,
         "device": device,
         "run_dir": run_dir,
+        "use_preset": all_args.use_preset,
     }
 
     # run experiments
     if all_args.share_policy:
-        from runner.shared.env_runner import EnvRunner as Runner
+        from light_mappo.runner.shared.env_runner import EnvRunner as Runner
     else:
-        from runner.separated.env_runner import EnvRunner as Runner
+        from light_mappo.runner.separated.env_runner import EnvRunner as Runner
 
     runner = Runner(config)
     runner.run()

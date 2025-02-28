@@ -6,8 +6,9 @@
 """
 
 import torch
-from algorithms.algorithm.r_actor_critic import R_Actor, R_Critic
-from utils.util import update_linear_schedule
+from light_mappo.algorithms.algorithm.r_actor_critic import R_Actor, R_Critic
+from light_mappo.utils.util import update_linear_schedule
+from torch import nn
 
 
 class RMAPPOPolicy:
@@ -28,12 +29,14 @@ class RMAPPOPolicy:
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
 
-        self.obs_space = obs_space
-        self.share_obs_space = cent_obs_space
+        self.obs_space = obs_space  # obs_space.shape = (24, )
+        self.share_obs_space = cent_obs_space  # (72, )
         self.act_space = act_space
 
-        self.actor = R_Actor(args, self.obs_space, self.act_space, self.device)
-        self.critic = R_Critic(args, self.share_obs_space, self.device)
+        self.actor = R_Actor(args, self.obs_space, self.act_space, self.device, model_path=r'D:\light_mappo\light_mappo\results\MyEnv\uav_swarm_confrontation\rmappo\check\run85\models\actor.pt')
+        # self.actor = R_Actor(args, self.obs_space, self.act_space, self.device, model_path=None)
+        self.critic = R_Critic(args, self.share_obs_space, self.device, model_path=r'D:\light_mappo\light_mappo\results\MyEnv\uav_swarm_confrontation\rmappo\check\run85\models\critic.pt')
+        # self.critic = R_Critic(args, self.share_obs_space, self.device, model_path=None)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,

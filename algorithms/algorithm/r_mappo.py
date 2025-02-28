@@ -8,9 +8,9 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from utils.util import get_gard_norm, huber_loss, mse_loss
-from utils.valuenorm import ValueNorm
-from algorithms.utils.util import check
+from light_mappo.utils.util import get_gard_norm, huber_loss, mse_loss
+from light_mappo.utils.valuenorm import ValueNorm
+from light_mappo.algorithms.utils.util import check
 
 
 class RMAPPO():
@@ -48,12 +48,17 @@ class RMAPPO():
         self._use_valuenorm = args.use_valuenorm
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
+        if args.use_ShareBase:
+            self._use_popart = False
+            self._use_valuenorm = True
+            self._use_recurrent_policy = False
+            self._use_naive_recurrent = False
 
         assert (self._use_popart and self._use_valuenorm) == False, (
             "self._use_popart and self._use_valuenorm can not be set True simultaneously")
 
         if self._use_popart:
-            self.value_normalizer = self.policy.critic.v_out
+            self.value_normalizer = self.policy.critic.v_out  # v_out is PopArt
         elif self._use_valuenorm:
             self.value_normalizer = ValueNorm(1, device=self.device)
         else:
@@ -112,8 +117,8 @@ class RMAPPO():
         :return imp_weights: (torch.Tensor) importance sampling weights.
         """
         share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
-        value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
-        adv_targ, available_actions_batch = sample
+            value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
+            adv_targ, available_actions_batch = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -150,7 +155,7 @@ class RMAPPO():
         if update_actor:
             (policy_loss - dist_entropy * self.entropy_coef).backward()
 
-        if self._use_max_grad_norm:
+        if self._use_max_grad_norm:  # this is True
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
         else:
             actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
@@ -181,7 +186,7 @@ class RMAPPO():
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
-        if self._use_popart or self._use_valuenorm:
+        if self._use_popart or self._use_valuenorm:  # _use_popart=True
             advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(buffer.value_preds[:-1])
         else:
             advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
@@ -201,7 +206,7 @@ class RMAPPO():
         train_info['ratio'] = 0
 
         for _ in range(self.ppo_epoch):
-            if self._use_recurrent_policy:
+            if self._use_recurrent_policy:  # this is true
                 data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
             elif self._use_naive_recurrent:
                 data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
@@ -233,4 +238,3 @@ class RMAPPO():
     def prep_rollout(self):
         self.policy.actor.eval()
         self.policy.critic.eval()
-

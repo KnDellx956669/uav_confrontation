@@ -4,10 +4,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class PopArt(torch.nn.Module):
-    
+
     def __init__(self, input_shape, output_shape, norm_axes=1, beta=0.99999, epsilon=1e-5, device=torch.device("cpu")):
-        
+
         super(PopArt, self).__init__()
 
         self.beta = beta
@@ -20,7 +21,7 @@ class PopArt(torch.nn.Module):
 
         self.weight = nn.Parameter(torch.Tensor(output_shape, input_shape)).to(**self.tpdv)
         self.bias = nn.Parameter(torch.Tensor(output_shape)).to(**self.tpdv)
-        
+
         self.stddev = nn.Parameter(torch.ones(output_shape), requires_grad=False).to(**self.tpdv)
         self.mean = nn.Parameter(torch.zeros(output_shape), requires_grad=False).to(**self.tpdv)
         self.mean_sq = nn.Parameter(torch.zeros(output_shape), requires_grad=False).to(**self.tpdv)
@@ -44,13 +45,13 @@ class PopArt(torch.nn.Module):
         input_vector = input_vector.to(**self.tpdv)
 
         return F.linear(input_vector, self.weight, self.bias)
-    
+
     @torch.no_grad()
     def update(self, input_vector):
         if type(input_vector) == np.ndarray:
             input_vector = torch.from_numpy(input_vector)
         input_vector = input_vector.to(**self.tpdv)
-        
+
         old_mean, old_stddev = self.mean, self.stddev
 
         batch_mean = input_vector.mean(dim=tuple(range(self.norm_axes)))
@@ -60,10 +61,16 @@ class PopArt(torch.nn.Module):
         self.mean_sq.mul_(self.beta).add_(batch_sq_mean * (1.0 - self.beta))
         self.debiasing_term.mul_(self.beta).add_(1.0 * (1.0 - self.beta))
 
-        self.stddev = (self.mean_sq - self.mean ** 2).sqrt().clamp(min=1e-4)
+        # to avoid inplace operation
+        with torch.no_grad():
+            new_stddev = (self.mean_sq - self.mean ** 2).sqrt().clamp(min=1e-4)
+            self.stddev = nn.Parameter(new_stddev, requires_grad=False)
+            self.weight = nn.Parameter(self.weight * old_stddev / new_stddev, requires_grad=True)
+            self.bias = nn.Parameter((old_stddev * self.bias + old_mean - self.mean) / new_stddev, requires_grad=True)
+        # self.stddev.copy_((self.mean_sq - self.mean ** 2).sqrt().clamp(min=1e-4))
 
-        self.weight = self.weight * old_stddev / self.stddev
-        self.bias = (old_stddev * self.bias + old_mean - self.mean) / self.stddev
+        # self.weight.copy_(self.weight * old_stddev / self.stddev)
+        # self.bias.copy_((old_stddev * self.bias + old_mean - self.mean) / self.stddev)
 
     def debiased_mean_var(self):
         debiased_mean = self.mean / self.debiasing_term.clamp(min=self.epsilon)
@@ -78,7 +85,7 @@ class PopArt(torch.nn.Module):
 
         mean, var = self.debiased_mean_var()
         out = (input_vector - mean[(None,) * self.norm_axes]) / torch.sqrt(var)[(None,) * self.norm_axes]
-        
+
         return out
 
     def denormalize(self, input_vector):
@@ -88,7 +95,7 @@ class PopArt(torch.nn.Module):
 
         mean, var = self.debiased_mean_var()
         out = input_vector * torch.sqrt(var)[(None,) * self.norm_axes] + mean[(None,) * self.norm_axes]
-        
+
         out = out.cpu().numpy()
 
         return out

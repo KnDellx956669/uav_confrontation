@@ -158,7 +158,7 @@ def get_config():
     )
 
     # prepare parameters
-    parser.add_argument("--algorithm_name", type=str, default="mappo", choices=["rmappo", "mappo"])
+    parser.add_argument("--algorithm_name", type=str, default="rmappo", choices=["rmappo", "mappo"])
 
     parser.add_argument(
         "--experiment_name",
@@ -206,8 +206,8 @@ def get_config():
     parser.add_argument(
         "--num_env_steps",
         type=int,
-        default=10e6,
-        help="Number of environment steps to train (default: 10e6)",
+        default=4e7,
+        help="Number of environment steps to train (default: 20e6)",
     )
     parser.add_argument(
         "--user_name",
@@ -226,20 +226,33 @@ def get_config():
     )
 
     # replay buffer parameters
-    parser.add_argument("--episode_length", type=int, default=200, help="Max length for any episode")
+    parser.add_argument("--episode_length", type=int, default=400, help="Max length for any episode")
 
     # network parameters
     parser.add_argument(
         "--share_policy",
-        action="store_false",
-        default=False,
+        action="store_true",
+        default=True,
         help="Whether agent share the same policy",
     )
     parser.add_argument(
         "--use_centralized_V",
         action="store_false",
-        default=True,
+        default=False,
         help="Whether to use centralized V function",
+    )
+    parser.add_argument(
+        "--use_NVMAPPO",
+        action="store_false",
+        default=False,
+        help="Whether to use NVMAPPO by adding gaussian noise feature to the global state",
+    )
+    parser.add_argument(
+        "--use_ShareBase",
+        action="store_false",
+        default=False,
+        help="Whether to use a new paradigm of mappo which uses a sharing framework. "
+             "Mention that using _valuenorm under such setting"
     )
     parser.add_argument(
         "--stacked_frames",
@@ -269,19 +282,19 @@ def get_config():
     parser.add_argument(
         "--use_popart",
         action="store_true",
-        default=False,
+        default=True,
         help="by default False, use PopArt to normalize rewards.",
     )
     parser.add_argument(
         "--use_valuenorm",
         action="store_false",
-        default=True,
+        default=False,
         help="by default True, use running mean and std to normalize rewards.",
     )
     parser.add_argument(
         "--use_feature_normalization",
         action="store_false",
-        default=True,
+        default=False,
         help="Whether to apply layernorm to the inputs",
     )
     parser.add_argument(
@@ -295,14 +308,14 @@ def get_config():
     # recurrent parameters
     parser.add_argument(
         "--use_naive_recurrent_policy",
-        action="store_true",
+        action="store_false",
         default=False,
         help="Whether to use a naive recurrent policy",
     )
     parser.add_argument(
         "--use_recurrent_policy",
-        action="store_false",
-        default=False,
+        action="store_true",
+        default=True,
         help="use a recurrent policy",
     )
     parser.add_argument("--recurrent_N", type=int, default=1, help="The number of recurrent layers.")
@@ -314,11 +327,11 @@ def get_config():
     )
 
     # optimizer parameters
-    parser.add_argument("--lr", type=float, default=5e-4, help="learning rate (default: 5e-4)")
+    parser.add_argument("--lr", type=float, default=3e-4, help="learning rate (default: 5e-4)")
     parser.add_argument(
         "--critic_lr",
         type=float,
-        default=5e-4,
+        default=3e-4,
         help="critic learning rate (default: 5e-4)",
     )
     parser.add_argument(
@@ -330,7 +343,7 @@ def get_config():
     parser.add_argument("--weight_decay", type=float, default=0)
 
     # ppo parameters
-    parser.add_argument("--ppo_epoch", type=int, default=15, help="number of ppo epochs (default: 15)")
+    parser.add_argument("--ppo_epoch", type=int, default=10, help="number of ppo epochs (default: 15)")
     parser.add_argument(
         "--use_clipped_value_loss",
         action="store_false",
@@ -340,7 +353,7 @@ def get_config():
     parser.add_argument(
         "--clip_param",
         type=float,
-        default=0.2,
+        default=0.1,
         help="ppo clip parameter (default: 0.2)",
     )
     parser.add_argument(
@@ -394,7 +407,7 @@ def get_config():
     parser.add_argument(
         "--use_proper_time_limits",
         action="store_true",
-        default=False,
+        default=True,
         help="compute returns taking into account time limits",
     )
     parser.add_argument(
@@ -421,7 +434,7 @@ def get_config():
     parser.add_argument(
         "--use_linear_lr_decay",
         action="store_true",
-        default=False,
+        default=True,
         help="use a linear schedule on the learning rate",
     )
     # save parameters
@@ -443,7 +456,7 @@ def get_config():
     # eval parameters
     parser.add_argument(
         "--use_eval",
-        action="store_true",
+        action="store_false",
         default=False,
         help="by default, do not start evaluation. If set`, start evaluation alongside with training.",
     )
@@ -470,7 +483,7 @@ def get_config():
     parser.add_argument(
         "--use_render",
         action="store_true",
-        default=False,
+        default=True,
         help="by default, do not render the env during training. If set, start render. Note: something, the environment has internal render process which is not controlled by this hyperparam.",
     )
     parser.add_argument(
