@@ -13,6 +13,8 @@ import imageio
 
 from light_mappo.runner.shared.base_runner import Runner
 
+from collections import deque
+
 
 def _t2n(x):
     return x.detach().cpu().numpy()
@@ -28,6 +30,8 @@ class EnvRunner(Runner):
         self.reset_noise_interval = -1
         self.noise_dim = 5
         self.reset_noise()
+        self.complete_episode_count = 0
+        self.record_full_win_history = []
 
     def reset_noise(self):
         "init noise"
@@ -136,8 +140,8 @@ class EnvRunner(Runner):
                         obs, rewards, dones, infos = self.envs.step(actions_env)
 
                         # render the first env of all the n_rollout_threads envs in every episode
-                        self.envs.envs[0].render()
-                        time.sleep(0.001)
+                        # self.envs.envs[0].render()
+                        # time.sleep(0.001)
 
                         data = (
                             obs,
@@ -189,6 +193,9 @@ class EnvRunner(Runner):
                         self.eval(total_num_steps)
 
         else:
+            self.complete_episode_count = 0
+            self.record_full_win_history = []
+            win_history = deque(maxlen=100)
             for episode in range(episodes):
                 if self.use_linear_lr_decay:
                     self.trainer.policy.lr_decay(episode, episodes)
@@ -211,13 +218,9 @@ class EnvRunner(Runner):
 
                     # Obser reward and next obs
                     obs, rewards, dones, infos = self.envs.step(actions_env)  # shape of rewards is [5, 3, 1]
-
-                    # so far, rewards here can be positive !!!!!!!!!!
-
                     # render the first env of all the n_rollout_threads envs in every episode
-                    # self.envs.envs[0].render()
-                    # time.sleep(0.001)
-
+                    self.envs.envs[0].render()
+                    # time.sleep(0.02)
                     data = (
                         obs,
                         rewards,
@@ -232,6 +235,11 @@ class EnvRunner(Runner):
 
                     # insert data into buffer
                     self.insert(data)
+
+                    if np.all(dones):
+                        # record winning result
+                        win_history.append(int(infos[0][0]['WinningResult']['SelfWin']))
+                        self.complete_episode_count += 1
 
                 # compute return and update network
                 self.compute()
@@ -264,10 +272,16 @@ class EnvRunner(Runner):
                     train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
                     episode_rewards = np.sum(self.buffer.rewards, axis=(0, 2))
                     print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
-                    for i in range(5):
-                        print("the {}th episode rewards is {}".format(i+1, episode_rewards[i][0]))
+                    # for i in range(5):
+                    #     print("the {}th episode rewards is {}".format(i+1, episode_rewards[i][0]))
                     self.log_train(train_infos, total_num_steps)
-                    # self.log_env(env_infos, total_num_steps)
+
+                if len(win_history) == 100 and self.n_rollout_threads == 1:
+                    win_rate = sum(win_history) / len(win_history)
+                    self.record_full_win_history.append(win_rate)
+                    assert self.complete_episode_count % 100 == 0
+                    self.log_env(self.record_full_win_history, self.complete_episode_count/100)
+                    win_history.clear()
 
                 # eval
                 if episode % self.eval_interval == 0 and self.use_eval:
@@ -374,7 +388,7 @@ class EnvRunner(Runner):
         active_masks[dones_env == True] = np.ones(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
 
         bad_masks = np.array(
-            [[[0.0] if info[agent_id]['bad_transition'] else [1.0] for agent_id in range(self.num_agents)] for info in
+            [[[0.0] if hasattr(info[agent_id], 'bad_transition') and info[agent_id]['bad_transition'] else [1.0] for agent_id in range(self.num_agents)] for info in
              infos])
 
         if self.use_centralized_V:

@@ -33,9 +33,9 @@ class RMAPPOPolicy:
         self.share_obs_space = cent_obs_space  # (72, )
         self.act_space = act_space
 
-        self.actor = R_Actor(args, self.obs_space, self.act_space, self.device, model_path=r'D:\light_mappo\light_mappo\results\MyEnv\uav_swarm_confrontation\rmappo\check\run85\models\actor.pt')
+        self.actor = R_Actor(args, self.obs_space, self.act_space, self.device, model_path=r'D:\light_mappo\light_mappo\results\MyEnv\uav_swarm_confrontation\rmappo\Task1\run30\models\actor.pt')
         # self.actor = R_Actor(args, self.obs_space, self.act_space, self.device, model_path=None)
-        self.critic = R_Critic(args, self.share_obs_space, self.device, model_path=r'D:\light_mappo\light_mappo\results\MyEnv\uav_swarm_confrontation\rmappo\check\run85\models\critic.pt')
+        self.critic = R_Critic(args, self.share_obs_space, self.device, model_path=r'D:\light_mappo\light_mappo\results\MyEnv\uav_swarm_confrontation\rmappo\Task1\run30\models\critic.pt')
         # self.critic = R_Critic(args, self.share_obs_space, self.device, model_path=None)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),

@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def scripted_action(world, agent):
+def scripted_action(world, agent, obs=None):
     # let the blue uav to fly towards the red uav, the following setting raises a question, the red uav
     # if hard to escape since the omega and vel is limited
     # omega = 0

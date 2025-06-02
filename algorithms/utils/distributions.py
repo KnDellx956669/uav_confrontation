@@ -84,7 +84,7 @@ class DiagGaussian(nn.Module):
         self.logstd = AddBias(torch.zeros(num_outputs))
 
     def forward(self, x):
-        action_mean = self.fc_mean(x)
+        action_mean = self.fc_mean(x)  # output the bias and variance in dim 2
 
         #  An ugly hack for my KFAC implementation.
         zeros = torch.zeros(action_mean.size())

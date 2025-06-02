@@ -82,11 +82,11 @@ def main(args):
         os.makedirs(str(run_dir))
 
     if not run_dir.exists():
-        curr_run = 'run_20000_episodes'
+        curr_run = 'run1'
     else:
         exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in run_dir.iterdir() if str(folder.name).startswith('run')]
         if len(exst_run_nums) == 0:
-            curr_run = 'run_20000_episodes'
+            curr_run = 'run1'
         else:
             curr_run = 'run%i' % (max(exst_run_nums) + 1)
     run_dir = run_dir / curr_run

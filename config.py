@@ -163,7 +163,7 @@ def get_config():
     parser.add_argument(
         "--experiment_name",
         type=str,
-        default="check",
+        default="Task1",
         help="an identifier to distinguish different experiment.",
     )
     parser.add_argument("--seed", type=int, default=1, help="Random seed for numpy/torch")
@@ -188,7 +188,7 @@ def get_config():
     parser.add_argument(
         "--n_rollout_threads",
         type=int,
-        default=5,
+        default=1,
         help="Number of parallel envs for training rollouts",
     )
     parser.add_argument(
@@ -226,7 +226,7 @@ def get_config():
     )
 
     # replay buffer parameters
-    parser.add_argument("--episode_length", type=int, default=400, help="Max length for any episode")
+    parser.add_argument("--episode_length", type=int, default=200, help="Max length for any episode")
 
     # network parameters
     parser.add_argument(

@@ -149,12 +149,10 @@ class Runner(object):
         for k, v in train_infos.items():
             self.writter.add_scalars(k, {k: v}, total_num_steps)
 
-    def log_env(self, env_infos, total_num_steps):
+    def log_env(self, env_win_rate, episodes):
         """
         Log env info.
         :param env_infos: (dict) information about env state.
         :param total_num_steps: (int) total number of training env steps.
         """
-        for k, v in env_infos.items():
-            if len(v) > 0:
-                self.writter.add_scalars(k, {k: np.mean(v)}, total_num_steps)
+        self.writter.add_scalars("WinRatePer100Episodes", {"WinRate": env_win_rate[-1]}, episodes)

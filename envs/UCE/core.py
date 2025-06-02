@@ -1,7 +1,14 @@
 import numpy as np
 import torch
 import gymnasium as gym
+from gymnasium import spaces
 from numba import jit
+
+from ...algorithms.algorithm.r_actor_critic import R_Actor
+
+
+def _t2n(x):
+    return x.detach().cpu().numpy()
 
 
 # physical/external base state of all entities
@@ -34,9 +41,23 @@ class AgentState(EntityState):
 
 # action of the agent
 class Action(object):
-    def __init__(self):
+    def __init__(self, args, observation_space, act_space, model_path=None):
         # physical action
-        self.u = None
+        self.episode_length = args.episode_length
+        self.n_rollout_threads = args.n_rollout_threads
+        self.num_agents = args.num_scripted_agents
+        self.actor = R_Actor(args, observation_space, act_space, model_path=model_path)
+        self.recurrent_N = args.recurrent_N
+        self.hidden_size = args.hidden_size
+        self.rnn_states = np.zeros(
+            (self.episode_length + 1, self.num_agents, self.recurrent_N, self.hidden_size),
+            dtype=np.float32)
+
+    def act(self, obs, masks, step):
+        step = step - 1
+        actions, action_log_probs, rnn_states = self.actor(obs, self.rnn_states[step], masks)
+        self.rnn_states[step + 1] = _t2n(rnn_states).copy()
+        return actions
 
 
 # properties of agent entities
@@ -54,7 +75,6 @@ class Agent:
         # state
         self.state = AgentState(index=index)
         # action
-        self.action = Action()
         self.action_callback = None
         # index of reward
         self.reward_index = 0
@@ -81,7 +101,7 @@ class World(object):
         # color dimensionality
         self.dim_color = 3
         # simulation timestep, every timestep means 1 second
-        self.dt = 1
+        self.dt = 4
         # number of agents
         self.num_agents = 6
 
@@ -92,6 +112,11 @@ class World(object):
 
         # the api for task, by default, the task number is 1
         self.task_num = 1
+
+        # serves for self-play
+        self.scripted_act_selfplay = None
+        self.selfplay = None
+        self.action_space = []
 
     # return all agents controllable by external policies
     @property
@@ -196,8 +221,22 @@ class World(object):
         self.world_step += 1
 
         # set actions for scripted agents
-        for agent in self.scripted_agents:
-            agent.state.p_vel, agent.state.omega = agent.action_callback(self, agent)
+        # get obs for blue uavs and masks, step
+        if self.selfplay:
+            obs = []
+            masks = np.ones((self.num_blue_agents, 1))
+            for agent in self.scripted_agents:
+                obs.append(self.get_observation(agent))
+                masks[agent.state.index] = 0 if not agent.state.is_alive else 1
+            obs = np.stack(obs, axis=0)
+            obs = obs.reshape(self.num_blue_agents, -1)
+            actions = self.scripted_act_selfplay.act(obs, masks, self.world_step)
+
+            for i, agent in enumerate(self.scripted_agents):
+                self._set_action(actions[i], agent, self.action_space[i])
+        else:
+            for agent in self.scripted_agents:
+                agent.state.p_vel, agent.state.omega = agent.action_callback(self, agent)
 
         # update agent state
         for agent in self.agents:
@@ -348,4 +387,27 @@ class World(object):
             # Check if this blue agent is "dead" in circumstance matrix
             if np.any(circumstance_blue_all_live[blue_agent.state.index] != 1):
                 blue_agent.state.is_alive = 0
+
+        # set env action for a particular agent
+    def _set_action(self, action, agent, action_space, time=None):
+        # process action
+        action = self.scale_action(action, agent, action_space)
+        if agent.state.is_alive:
+            agent.state.p_vel = action[0]
+            agent.state.omega = action[1]
+        else:
+            agent.state.p_vel = 0
+            agent.state.omega = 0
+
+        action = action[2:]
+        assert len(action) == 0, "action should not be empty"
+
+    def scale_action(self, action, agent, action_space):
+        low = action_space.low
+        high = action_space.high
+        action = _t2n(action)
+        action = low + (action + 1.0) * 0.5 * (high - low)
+        clipped_action = np.clip(action, low, high)
+
+        return clipped_action
 

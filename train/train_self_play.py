@@ -1,10 +1,3 @@
-"""
-# @Time    : 2021/6/30 10:07 下午
-# @Author  : hezhiqiang
-# @Email   : tinyzqh@163.com
-# @File    : train_task_1.py
-"""
-
 # !/usr/bin/env python
 import sys
 import os
@@ -21,7 +14,7 @@ parent_dir = os.path.abspath(os.path.join(os.getcwd(), "."))
 sys.path.append(parent_dir)
 
 from light_mappo.config import get_config
-from light_mappo.envs.env_wrappers import DummyVecEnv
+from light_mappo.envs.env_wrappers import DummyVecEnv, SubprocVecEnv
 from light_mappo.envs.UCE.UCE_env import UCEEnv
 
 """Train script for MPEs."""
@@ -41,7 +34,7 @@ def make_train_env(all_args):
 
             # env = DiscreteActionEnv()
 
-            env.seed(all_args.seed + rank * 1000)
+            env.seed(all_args.seed)
             return env
 
         return init_env
@@ -74,9 +67,10 @@ def parse_args(args, parser):
     parser.add_argument("--num_scripted_agents", type=int, default=3, help="number of policy players")
     parser.add_argument("--num_red_agents", type=int, default=3, help="number of red players")
     parser.add_argument("--num_blue_agents", type=int, default=3, help="number of blue players")
-    parser.add_argument("--task_num", type=int, default=2, help="the number of tasks")
-    parser.add_argument("--train_stage", type=str, default="curriculum", help="train stage (curriculum or self-play)")
+    parser.add_argument("--task_num", type=int, default=1, help="the number of tasks")
+    parser.add_argument("--train_stage", type=str, default="self-play", help="train stage (curriculum or self-play)")
     parser.add_argument("--use_preset", default=False, help="use preset physical parameters")
+    parser.add_argument("--selfplay_model", default="D:/light_mappo/light_mappo/results/MyEnv/uav_swarm_confrontation/rmappo/check/run86/models/actor.pt", help="model for blue uavs in self-play stage")
 
     all_args = parser.parse_known_args(args)[0]
 

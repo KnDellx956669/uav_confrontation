@@ -1,8 +1,11 @@
 import numpy as np
 from light_mappo.envs.UCE.core import World, Agent
+from light_mappo.envs.UCE.core import Action
 from light_mappo.envs.UCE.scenario import BaseScenario
 from light_mappo.envs.UCE.randompolicy import scripted_action
 # from light_mappo.envs.UCE.randomwalkpolicy import scripted_action
+
+from gymnasium import spaces
 
 
 class Scenario(BaseScenario):
@@ -35,11 +38,33 @@ class Scenario(BaseScenario):
 
                 # set action for scripted agents
                 agent.action_callback = scripted_action
+
+        elif args.train_stage == "self-play":
+            for index in range(world.num_blue_agents):
+                agent = Agent(index=index, uav_color='Blue')
+                agent.name = 'agent %d' % index
+                agent.size = 0.05
+                world.agents.append(agent)
+
+                # set action for scripted agents, though it's controlled by neural network
+                agent.action_callback = scripted_action
+
+                if agent.state.index == 0:
+                    tmp_action_space = spaces.Box(low=np.array([100, -np.pi / 6]), high=np.array([500, np.pi / 6]),
+                                                      shape=(2,), dtype=np.float32)
+                else:
+                    tmp_action_space = spaces.Box(low=np.array([60, -np.pi / 6]), high=np.array([300, np.pi / 6]),
+                                                      dtype=np.float32)
+
+                world.action_space.append(tmp_action_space)
+
+            world.selfplay = True
+
         # make initial conditions
-        self.reset_world(world)
+        self.reset_world(args, world)
         return world
 
-    def reset_world(self, world):
+    def reset_world(self, args, world):
         world.world_step = 0
         
         # set different color for red and blue uav
@@ -74,6 +99,13 @@ class Scenario(BaseScenario):
                     agent.state.p_vel = np.random.uniform(60, 300)
                     agent.state.phi = np.pi / 4
                     agent.state.rho = 10000
+
+        if args.train_stage == "self-play":
+            world.selfplay = True
+            obs_space = spaces.Box(low=-np.inf, high=+np.inf, shape=(21,), dtype=np.float32)
+            act_space = spaces.Box(low=np.array([100, -np.pi / 6]), high=np.array([500, np.pi / 6]), shape=(2,),
+                                   dtype=np.float32)
+            world.scripted_act_selfplay = Action(args, obs_space, act_space, model_path=args.selfplay_model)
 
     # TODO: complete this benchmark_data function
     def benchmark_data(self, agent, world):

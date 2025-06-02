@@ -12,11 +12,12 @@ class MultiAgentEnv(gym.Env):
         'render.modes': ['human', 'rgb_array']
     }
 
-    def __init__(self, world, reset_callback=None, reward_callback=None,
+    def __init__(self, args, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, post_step_callback=None,
                  shared_viewer=True):
 
+        self.args = args
         self.world = world
         self.world_length = self.world.world_length
         self.current_step = 0
@@ -92,11 +93,29 @@ class MultiAgentEnv(gym.Env):
             reward_n.append([self._get_reward(agent)])
             done_n.append(self._get_done(agent))
             info = {'individual_reward': self._get_reward(agent)}
-            info['bad_transition'] = True if self.current_step >= self.world_length else False
-            env_info = self._get_info(agent)
-            if 'fail' in env_info.keys():
-                info['fail'] = env_info['fail']
             info_n.append(info)
+
+        # record the winning result
+        num_ene_liv = len([agent for agent in self.world.scripted_agents if agent.state.is_alive])
+        num_self_liv = len([agent for agent in self.world.policy_agents if agent.state.is_alive])
+
+        if self.current_step >= self.world_length:
+            self_win = (num_self_liv > num_ene_liv)
+            draw = (num_self_liv == num_ene_liv)
+            if draw:
+                for info in info_n:
+                    info['WinningResult'] = {'SelfWin': False, 'EneWin': False}
+                    info['bad_transition'] = True
+            else:
+                for info in info_n:
+                    info['WinningResult'] = {'SelfWin': self_win, 'EneWin': not self_win}
+                    info['bad_transition'] = True
+        elif num_ene_liv == 0:
+            for info in info_n:
+                info['WinningResult'] = {'SelfWin': True, 'EneWin': False}
+        elif num_self_liv == 0:
+            for info in info_n:
+                info['WinningResult'] = {'SelfWin': False, 'EneWin': True}
 
         # all agents get total reward in cooperative case
         reward = np.sum(reward_n)
@@ -110,46 +129,11 @@ class MultiAgentEnv(gym.Env):
         # so far, the reward can be positive
         return obs_n, reward_n, done_n, info_n
 
-    def step_preset(self, action_n):
-        self.current_step += 1
-        obs_n = []
-        reward_n = []
-        done_n = []
-        info_n = []
-        self.agents = self.world.policy_agents
-        # set action for each agent
-        for i, agent in enumerate(self.agents):
-            self._set_preset_action(action_n[i], agent, self.action_space[i])
-
-        # advance world state
-        self.world.step()
-
-        # record observation for each agent
-        for i, agent in enumerate(self.agents):
-            obs_n.append(self._get_obs(agent))
-            reward_n.append([self._get_reward(agent)])
-            done_n.append(self._get_done(agent))
-            info = {'individual_reward': self._get_reward(agent)}
-            env_info = self._get_info(agent)
-            if 'fail' in env_info.keys():
-                info['fail'] = env_info['fail']
-            info_n.append(info)
-
-        # all agents get total reward in cooperative case
-        reward = np.sum(reward_n)
-        if self.shared_reward:
-            reward_n = [reward] * self.n
-
-        # reset all agents' rewards to be 0
-        for agent in self.world.agents:
-            agent.reward_index = 0
-
-        return obs_n, reward_n, done_n, info_n
 
     def reset(self):
         self.current_step = 0
         # reset world
-        self.reset_callback(self.world)
+        self.reset_callback(self.args, self.world)
         # reset renderer
         self._reset_render()
         # record observations for each agent
@@ -193,6 +177,9 @@ class MultiAgentEnv(gym.Env):
         #             return True
         #
         #         return False
+        num_ene_liv = len([agent for agent in self.world.scripted_agents if agent.state.is_alive])
+        if num_ene_liv == 0:
+            return True
 
         if self.done_callback is None:
             if self.current_step >= self.world_length:

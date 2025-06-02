@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def scripted_action(world, agent):
+def scripted_action(world, agent, obs=None):
     # if world.world_step in [0, 30, 70, 120, 150, 200, 250, 310]:  # random number
     if world.world_step in [0, 70, 150, 250, 310]:
         if agent.state.index == 0:

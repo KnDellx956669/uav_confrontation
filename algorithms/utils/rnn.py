@@ -22,7 +22,7 @@ class RNNLayer(nn.Module):
         self.norm = nn.LayerNorm(outputs_dim)
 
     def forward(self, x, hxs, masks):  # hxs is for hidden states (with regard to x , so hx), masks implies the termination of a trajectory
-        if x.size(0) == hxs.size(0):
+        if x.size(0) == hxs.size(0):  # x is (15, 64), hxs is (15, 1, 64)
             # the present project uses this branch, and the _recurrent_N is 1
             x, hxs = self.rnn(x.unsqueeze(0),
                               (hxs * masks.repeat(1, self._recurrent_N).unsqueeze(-1)).transpose(0, 1).contiguous())

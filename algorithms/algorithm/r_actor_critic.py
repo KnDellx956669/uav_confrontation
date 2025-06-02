@@ -120,9 +120,8 @@ class R_Actor(nn.Module):
         """
         加载模型权重
         """
-        checkpoint = torch.load(model_path, map_location=device)  # 加载.pt文件
+        checkpoint = torch.load(model_path, map_location=device, weights_only=True)  # 加载.pt文件
         self.load_state_dict(checkpoint, strict=False)  # 将权重加载到模型中
-        print(f"Model loaded from {model_path}")
 
 
 class R_Critic(nn.Module):
@@ -198,6 +197,6 @@ class R_Critic(nn.Module):
         """
         加载模型权重
         """
-        checkpoint = torch.load(model_path, map_location=device)  # 加载.pt文件
+        checkpoint = torch.load(model_path, map_location=device, weights_only=True)  # 加载.pt文件
         self.load_state_dict(checkpoint, strict=False)  # 将权重加载到模型中
-        print(f"Model loaded from {model_path}")
+        print("Model loaded as expected!")
